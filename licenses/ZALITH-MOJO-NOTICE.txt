@@ -1,0 +1,4 @@
+ZalithLauncher 1.4.1.4 base source: GPL-3.0 (upstream project).
+MojoLauncher core source project: LGPL-3.0 (upstream project).
+This bundle was authored as a compatibility port and is not an official release of either project.
+The native MojoExec and linkerhook components are identified separately in MOJOEXEC-MIT-NOTICE.txt.

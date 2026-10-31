@@ -130,6 +130,14 @@ android {
                                     }
                                 }
                             }
+                            // LWJGL 3.4.1 natives come from an AAR that carries every ABI as assets:
+                            // keep only the ABI that is being built
+                            val abiDir = mapOf("arm" to "armeabi-v7a", "arm64" to "arm64-v8a", "x86" to "x86", "x86_64" to "x86_64")[arch]
+                            if (arch != "all" && abiDir != null) {
+                                File("$assetsDir/app_runtime/lwjgl/3.4.1/natives").listFiles()?.forEach {
+                                    if (it.name != abiDir) println("delete:${it} : ${it.deleteRecursively()}")
+                                }
+                            }
                         }
                     }
 
@@ -226,6 +234,8 @@ tasks.register("generateInfoDistributor") {
 
 tasks.named("preBuild") {
     dependsOn("generateInfoDistributor")
+    // builds the LWJGL 3.4.1 runtime jars into the assets (see jre_lwjgl341/build.gradle.kts)
+    dependsOn(":jre_lwjgl341:jar")
 }
 
 dependencies {

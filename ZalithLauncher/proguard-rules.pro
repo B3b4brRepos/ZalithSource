@@ -23,3 +23,8 @@
  }
 
 
+
+# SDL3 support: Java classes are called from native code (JNI) and by name from libSDL3
+-keep class org.libsdl.app.** { *; }
+-keep class com.movtery.zalithlauncher.game.sdl.** { *; }
+-keep class org.lwjgl.glfw.CallbackBridge { *; }

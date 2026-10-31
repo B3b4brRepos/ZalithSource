@@ -318,6 +318,7 @@ public class MainActivity extends BaseActivity implements ControlButtonMenuListe
         CallbackBridge.removeGrabListener(binding.mainGameRenderView);
         getWindow().getDecorView().getViewTreeObserver().removeOnGlobalLayoutListener(this);
         ContextExecutor.clearActivity();
+        com.movtery.zalithlauncher.game.sdl.SdlBridge.reset();
     }
 
     @Override

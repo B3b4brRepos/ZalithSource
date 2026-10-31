@@ -218,6 +218,33 @@ public class EfficientAndroidLWJGLKeycode {
         return 0;
     }
 
+    /**
+     * Maps a GLFW key code to the Android key code that SDL's Android backend translates
+     * into the matching SDL scancode. Keys that share a table entry with another
+     * Android key (Home, End, Delete...) are resolved explicitly first.
+     * @return the Android key code, or KeyEvent.KEYCODE_UNKNOWN if there is none
+     */
+    public static int getSdlAndroidKeycode(int glfwKey) {
+        switch (glfwKey) {
+            case LwjglGlfwKeycode.GLFW_KEY_ESCAPE: return KeyEvent.KEYCODE_ESCAPE;
+            case LwjglGlfwKeycode.GLFW_KEY_HOME: return KeyEvent.KEYCODE_MOVE_HOME;
+            case LwjglGlfwKeycode.GLFW_KEY_END: return KeyEvent.KEYCODE_MOVE_END;
+            case LwjglGlfwKeycode.GLFW_KEY_KP_ADD: return KeyEvent.KEYCODE_NUMPAD_ADD;
+            case LwjglGlfwKeycode.GLFW_KEY_KP_DECIMAL: return KeyEvent.KEYCODE_NUMPAD_DOT;
+            case LwjglGlfwKeycode.GLFW_KEY_KP_ENTER: return KeyEvent.KEYCODE_NUMPAD_ENTER;
+            case LwjglGlfwKeycode.GLFW_KEY_DELETE: return KeyEvent.KEYCODE_FORWARD_DEL;
+            case LwjglGlfwKeycode.GLFW_KEY_KP_EQUAL: return KeyEvent.KEYCODE_NUMPAD_EQUALS;
+            case LwjglGlfwKeycode.GLFW_KEY_LEFT_SUPER: return KeyEvent.KEYCODE_META_LEFT;
+            case LwjglGlfwKeycode.GLFW_KEY_RIGHT_SUPER: return KeyEvent.KEYCODE_META_RIGHT;
+            case LwjglGlfwKeycode.GLFW_KEY_MENU: return KeyEvent.KEYCODE_MENU;
+            case LwjglGlfwKeycode.GLFW_KEY_2: return KeyEvent.KEYCODE_2;
+            case LwjglGlfwKeycode.GLFW_KEY_3: return KeyEvent.KEYCODE_3;
+            default:
+                int index = getIndexByValue(glfwKey);
+                return index <= 0 ? KeyEvent.KEYCODE_UNKNOWN : sAndroidKeycodes[index];
+        }
+    }
+
     private static void add(int androidKeycode, short LWJGLKeycode, String name){
         sAndroidKeycodes[mTmpCount] = androidKeycode;
         sLwjglKeycodes[mTmpCount] = LWJGLKeycode;

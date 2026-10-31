@@ -24,6 +24,7 @@ import androidx.annotation.NonNull;
 import com.movtery.zalithlauncher.event.single.RefreshHotbarEvent;
 import com.movtery.zalithlauncher.feature.MCOptions;
 import com.movtery.zalithlauncher.feature.log.Logging;
+import com.movtery.zalithlauncher.game.sdl.SdlBridge;
 import com.movtery.zalithlauncher.setting.AllSettings;
 import com.movtery.zalithlauncher.setting.AllStaticSettings;
 import com.movtery.zalithlauncher.ui.activity.BaseActivity;
@@ -40,6 +41,8 @@ import net.kdt.pojavlaunch.utils.JREUtils;
 
 import org.greenrobot.eventbus.EventBus;
 import org.lwjgl.glfw.CallbackBridge;
+import org.libsdl.app.SDLActivity;
+import org.libsdl.app.SDLSurface;
 
 import java.util.Locale;
 
@@ -118,22 +121,27 @@ public class MinecraftGLSurface extends View implements GrabListener {
                 private boolean isCalled = isAlreadyRunning;
                 @Override
                 public void surfaceCreated(@NonNull SurfaceHolder holder) {
+                    Surface sdlSurface = surfaceView.getHolder().getSurface();
+                    prepareSdlSurface(sdlSurface, this);
                     if(isCalled) {
-                        JREUtils.setupBridgeWindow(surfaceView.getHolder().getSurface());
+                        JREUtils.setupBridgeWindow(sdlSurface);
                         return;
                     }
                     isCalled = true;
 
-                    realStart(surfaceView.getHolder().getSurface());
+                    realStart(sdlSurface);
                 }
 
                 @Override
                 public void surfaceChanged(@NonNull SurfaceHolder holder, int format, int width, int height) {
                     refreshSize();
+                    notifySdlSurfaceChanged();
                 }
 
                 @Override
-                public void surfaceDestroyed(@NonNull SurfaceHolder holder) {}
+                public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
+                    releaseSdlSurface(surfaceView.getHolder().getSurface(), this);
+                }
             });
 
             ((ViewGroup)getParent()).addView(surfaceView);
@@ -148,6 +156,8 @@ public class MinecraftGLSurface extends View implements GrabListener {
                 @Override
                 public void onSurfaceTextureAvailable(@NonNull SurfaceTexture surface, int width, int height) {
                     Surface tSurface = new Surface(surface);
+                    mTextureSurface = tSurface;
+                    prepareSdlSurface(tSurface, this);
                     if(isCalled) {
                         JREUtils.setupBridgeWindow(tSurface);
                         return;
@@ -160,10 +170,13 @@ public class MinecraftGLSurface extends View implements GrabListener {
                 @Override
                 public void onSurfaceTextureSizeChanged(@NonNull SurfaceTexture surface, int width, int height) {
                     refreshSize();
+                    notifySdlSurfaceChanged();
                 }
 
                 @Override
                 public boolean onSurfaceTextureDestroyed(@NonNull SurfaceTexture surface) {
+                    releaseSdlSurface(mTextureSurface, this);
+                    mTextureSurface = null;
                     return true;
                 }
 
@@ -345,6 +358,43 @@ public class MinecraftGLSurface extends View implements GrabListener {
 
 
 
+
+    private Surface mTextureSurface;
+
+    /** Hands the game surface to the Android SDL layer (no-op cost if the game never uses SDL). */
+    private void prepareSdlSurface(Surface surface, Object source) {
+        try {
+            if (!(getContext() instanceof android.app.Activity) || !(getParent() instanceof ViewGroup)) return;
+            SdlBridge.prepareSurface((android.app.Activity) getContext(), surface, (ViewGroup) getParent(), source);
+        } catch (Throwable e) {
+            Logging.e("MGLSurface", "Failed to prepare SDL surface", e);
+        }
+    }
+
+    private void releaseSdlSurface(Surface surface, Object source) {
+        try {
+            if (SdlBridge.beginSurfaceDestroy(source, surface)) {
+                if (SdlBridge.getSdlEnabled() && SDLActivity.getSDLSurface() != null) {
+                    SDLActivity.getSDLSurface().surfaceDestroyed();
+                }
+                SdlBridge.unregisterSurface(surface);
+            }
+        } catch (Throwable e) {
+            Logging.e("MGLSurface", "Failed to release SDL surface", e);
+        }
+    }
+
+    private void notifySdlSurfaceChanged() {
+        if (!SdlBridge.getSdlEnabled()) return;
+        SDLSurface sdlSurface = SDLActivity.getSDLSurface();
+        if (sdlSurface == null) return;
+        try {
+            sdlSurface.surfaceChanged();
+            if (windowWidth > 0 && windowHeight > 0) sdlSurface.nativeResize(windowWidth, windowHeight);
+        } catch (Throwable e) {
+            Logging.e("MGLSurface", "Failed to resize SDL surface", e);
+        }
+    }
 
     /** Called when the size need to be set at any point during the surface lifecycle **/
     public void refreshSize() {

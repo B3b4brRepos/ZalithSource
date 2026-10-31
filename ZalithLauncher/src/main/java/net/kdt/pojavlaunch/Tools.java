@@ -157,6 +157,38 @@ public final class Tools {
         return new File(version.getVersionPath(), version.getVersionName() + ".jar").getAbsolutePath();
     }
 
+    /**
+     * Detects which LWJGL 3 the given version wants, from its org.lwjgl:lwjgl library entry.
+     * @return the version as an integer without dots (3.3.3 -> 333, 3.4.1 -> 341), or 0 if unknown
+     */
+    public static int detectLwjglVersion(JMinecraftVersionList.Version info) {
+        if (info == null || info.libraries == null) return 0;
+        final String prefix = "org.lwjgl:lwjgl:";
+        for (DependentLibrary libItem : info.libraries) {
+            if (libItem == null || libItem.name == null || !libItem.name.startsWith(prefix)) continue;
+            if (!checkRules(libItem.rules)) continue;
+            StringBuilder digits = new StringBuilder();
+            for (char c : libItem.name.substring(prefix.length()).toCharArray()) {
+                if (c == '.') continue;
+                if (c < '0' || c > '9') break;
+                digits.append(c);
+            }
+            try {
+                int v = Integer.parseInt(digits.toString());
+                if (v >= 300 && v <= 999) return v;
+            } catch (NumberFormatException ignored) {}
+        }
+        return 0;
+    }
+
+    /** Class path of the LWJGL 3.4.1 runtime (see Lwjgl341Component), or the 3.3.x one. */
+    public static String getLWJGL3ClassPath(boolean useLwjgl341) {
+        if (useLwjgl341) {
+            return com.movtery.zalithlauncher.feature.unpack.Lwjgl341Component.classPath();
+        }
+        return getLWJGL3ClassPath();
+    }
+
     public static String getLWJGL3ClassPath() {
         StringBuilder libStr = new StringBuilder();
         File lwjgl3Folder = new File(PathManager.DIR_GAME_HOME, "lwjgl3");

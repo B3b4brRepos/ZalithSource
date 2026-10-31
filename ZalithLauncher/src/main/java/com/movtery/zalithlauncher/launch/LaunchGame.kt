@@ -12,6 +12,7 @@ import com.movtery.zalithlauncher.feature.accounts.AccountType
 import com.movtery.zalithlauncher.feature.accounts.AccountUtils
 import com.movtery.zalithlauncher.feature.accounts.AccountsManager
 import com.movtery.zalithlauncher.feature.log.Logging
+import com.movtery.zalithlauncher.feature.unpack.Lwjgl341Component
 import com.movtery.zalithlauncher.feature.version.Version
 import com.movtery.zalithlauncher.renderer.Renderers
 import com.movtery.zalithlauncher.setting.AllSettings
@@ -230,6 +231,17 @@ class LaunchGame {
             //预处理
             Tools.disableSplash(gameDirPath)
             val launchClassPath = Tools.generateLaunchClassPath(versionInfo, minecraftVersion)
+
+            // Versions that ship LWJGL 3.4.1+ (SDL3 based) run on the separate 3.4.1 runtime
+            val useLwjgl341 = Tools.detectLwjglVersion(versionInfo) >= Lwjgl341Component.MIN_VERSION
+            if (useLwjgl341) {
+                Lwjgl341Component.ensureInstalled(activity)
+                check(Lwjgl341Component.isInstalled()) {
+                    "This version needs LWJGL 3.4.1, but the runtime is not installed (is the jre_lwjgl341 module built into this APK?)"
+                }
+                Logger.appendToLog("Info: Using LWJGL 3.4.1 runtime: ${Lwjgl341Component.nativesDir()}")
+            }
+            JREUtils.lwjgl341NativesDir = if (useLwjgl341) Lwjgl341Component.nativesDir().absolutePath else null
 
             val launchArgs = LaunchArgs(
                 account,

@@ -65,6 +65,12 @@ public final class JREUtils {
 
     public static String LD_LIBRARY_PATH;
     public static String jvmLibraryPath;
+    /**
+     * Directory with the LWJGL 3.4.1 natives when the version being launched uses that runtime,
+     * null for everything else (LWJGL 3.3.x natives are then found in the native library dir).
+     * Set by LaunchGame right before launching.
+     */
+    public static volatile String lwjgl341NativesDir = null;
 
     public static String findInLdLibPath(String libName) {
         if (Os.getenv("LD_LIBRARY_PATH")==null) {
@@ -253,6 +259,13 @@ public final class JREUtils {
         String eglName = currentRenderer.getRendererEGL();
         if (eglName != null) envMap.put("POJAVEXEC_EGL", eglName);
 
+        // SDL3 (only read by the game when it renders through SDL): which GL/EGL driver to load
+        envMap.put("SDL_OPENGL_LIBRARY", rendererId);
+        if (eglName != null) {
+            File eglFile = eglName.startsWith("/") ? new File(eglName) : new File(PathManager.DIR_NATIVE_LIB, eglName);
+            if (eglFile.isFile()) envMap.put("SDL_EGL_LIBRARY", eglFile.getAbsolutePath());
+        }
+
         envMap.put("POJAV_RENDERER", rendererId);
 
         if (RendererPluginManager.getSelectedRendererPlugin() != null) return;
@@ -393,7 +406,7 @@ public final class JREUtils {
 
         // Force LWJGL to use the Freetype library intended for it, instead of using the one
         // that we ship with Java (since it may be older than what's needed)
-        userArgs.add("-Dorg.lwjgl.freetype.libname="+ DIR_NATIVE_LIB +"/libfreetype.so");
+        userArgs.add("-Dorg.lwjgl.freetype.libname="+ (lwjgl341NativesDir != null ? lwjgl341NativesDir : DIR_NATIVE_LIB) +"/libfreetype.so");
 
         // Some phones are not using the right number of cores, fix that
         userArgs.add("-XX:ActiveProcessorCount=" + java.lang.Runtime.getRuntime().availableProcessors());
@@ -429,6 +442,9 @@ public final class JREUtils {
             final List<String> JVMArgs,
             final String userArgsString
     ) throws Throwable {
+        // Only a game launch selects the LWJGL 3.4.1 runtime (set by LaunchGame); the Java GUI launcher never does
+        if (gameVersion == null) lwjgl341NativesDir = null;
+
         String runtimeHome = MultiRTUtils.getRuntimeHome(runtime.name).getAbsolutePath();
 
         relocateLibPath(runtime, runtimeHome);
@@ -490,6 +506,12 @@ public final class JREUtils {
                 "-Djdk.lang.Process.launchMechanism=FORK", // Default is POSIX_SPAWN which requires starting jspawnhelper, which doesn't work on Android
                 "-Dsodium.checks.issue2561=false"
         ));
+
+        if (lwjgl341NativesDir != null) {
+            // LWJGL 3.4 locates its natives through this property; point it at the 3.4.1 natives
+            // so they never mix with the 3.3.x libraries in the native library dir
+            overridableArguments.add("-Dorg.lwjgl.librarypath=" + lwjgl341NativesDir);
+        }
 
         List<String> additionalArguments = new ArrayList<>();
         for (String arg : overridableArguments) {

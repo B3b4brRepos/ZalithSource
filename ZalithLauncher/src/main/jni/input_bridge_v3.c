@@ -19,6 +19,9 @@
 #include <stdatomic.h>
 #include <math.h>
 
+#include <stdbool.h>
+#include <stdint.h>
+
 #include "log.h"
 #include "utils.h"
 #include "environ/environ.h"
@@ -34,6 +37,21 @@
 
 static void registerFunctions(JNIEnv *env);
 
+// Called from org.lwjgl.sdl.SDLInit (game JVM): forwards to CallbackBridge.notifyLauncher in the Android VM
+JNIEXPORT jboolean JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeNotifyLauncher(JNIEnv* env, __attribute__((unused)) jclass clazz, jint type, jintArray action) {
+    TRY_ATTACH_ENV(dvm_env, pojav_environ->dalvikJavaVMPtr, "nativeNotifyLauncher failed!\n", return JNI_FALSE;);
+    if (pojav_environ->method_notifyLauncher == NULL) return JNI_FALSE;
+    jintArray converted = convertIntArrayJVM(env, dvm_env, action);
+    jboolean result = (*dvm_env)->CallStaticBooleanMethod(dvm_env, pojav_environ->bridgeClazz,
+                                                          pojav_environ->method_notifyLauncher, type, converted);
+    if ((*dvm_env)->ExceptionCheck(dvm_env)) {
+        (*dvm_env)->ExceptionDescribe(dvm_env);
+        (*dvm_env)->ExceptionClear(dvm_env);
+        return JNI_FALSE;
+    }
+    return result;
+}
+
 jint JNI_OnLoad(JavaVM* vm, __attribute__((unused)) void* reserved) {
     if (pojav_environ->dalvikJavaVMPtr == NULL) {
         __android_log_print(ANDROID_LOG_INFO, "Native", "Saving DVM environ...");
@@ -43,6 +61,7 @@ jint JNI_OnLoad(JavaVM* vm, __attribute__((unused)) void* reserved) {
         pojav_environ->bridgeClazz = (*pojav_environ->dalvikJNIEnvPtr_ANDROID)->NewGlobalRef(pojav_environ->dalvikJNIEnvPtr_ANDROID,(*pojav_environ->dalvikJNIEnvPtr_ANDROID) ->FindClass(pojav_environ->dalvikJNIEnvPtr_ANDROID,"org/lwjgl/glfw/CallbackBridge"));
         pojav_environ->method_accessAndroidClipboard = (*pojav_environ->dalvikJNIEnvPtr_ANDROID)->GetStaticMethodID(pojav_environ->dalvikJNIEnvPtr_ANDROID, pojav_environ->bridgeClazz, "accessAndroidClipboard", "(ILjava/lang/String;)Ljava/lang/String;");
         pojav_environ->method_onGrabStateChanged = (*pojav_environ->dalvikJNIEnvPtr_ANDROID)->GetStaticMethodID(pojav_environ->dalvikJNIEnvPtr_ANDROID, pojav_environ->bridgeClazz, "onGrabStateChanged", "(Z)V");
+        pojav_environ->method_notifyLauncher = (*pojav_environ->dalvikJNIEnvPtr_ANDROID)->GetStaticMethodID(pojav_environ->dalvikJNIEnvPtr_ANDROID, pojav_environ->bridgeClazz, "notifyLauncher", "(I[I)Z");
         pojav_environ->isUseStackQueueCall = JNI_FALSE;
     } else if (pojav_environ->dalvikJavaVMPtr != vm) {
         __android_log_print(ANDROID_LOG_INFO, "Native", "Saving JVM environ...");
@@ -312,6 +331,88 @@ JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetGrabbing(__at
     (*dalvikEnv)->CallStaticVoidMethod(dalvikEnv, pojav_environ->bridgeClazz, pojav_environ->method_onGrabStateChanged, grabbing);
     (*pojav_environ->dalvikJavaVMPtr)->DetachCurrentThread(pojav_environ->dalvikJavaVMPtr);
     pojav_environ->isGrabbing = grabbing;
+}
+
+// --- SDL 文本输入通道（启动器代管，供启动器侧显式唤起输入法） ---
+// 参考 Fold Craft Launcher（https://github.com/FCL-Team/FoldCraftLauncher/blob/cacd666292d9646ceb622c39b82123d8671e5b41/FCL/src/main/jni/input_bridge_v3.c）
+
+typedef struct SDL_Window SDL_Window;
+typedef uint32_t SDL_PropertiesID;
+typedef void (*SDL_MainThreadCallback)(void *userdata);
+typedef bool (*sdlStartTextInput_t)(SDL_Window *, SDL_PropertiesID);
+typedef bool (*sdlStopTextInput_t)(SDL_Window *);
+typedef bool (*sdlIsTextInputActive_t)(SDL_Window *);
+typedef bool (*sdlRunOnMainThread_t)(SDL_MainThreadCallback, void *, bool);
+
+// SDL 主窗口指针，由 exithook/sdl_hook.c 在窗口创建/销毁时同步（两库不反链接，经导出函数回填）
+static SDL_Window *sSdlPrimaryWindow = NULL;
+
+void sdlBridgeSetPrimaryWindow(struct SDL_Window *window) {
+    sSdlPrimaryWindow = window;
+}
+
+static void sdlTextInputMainThreadCallback(void *userdata) {
+    void *handle = dlopen("libSDL3.so", RTLD_NOW);
+    if (handle == NULL) return;
+    SDL_Window *window = sSdlPrimaryWindow;
+    if (window == NULL) return;
+    if (userdata != NULL) {
+        sdlStartTextInput_t start = (sdlStartTextInput_t) dlsym(handle, "SDL_StartTextInput");
+        if (start != NULL) start(window, 0);
+        else LOG_TO_E("<%s> %s", "SDL", "sdlTextInputMainThreadCallback: SDL_StartTextInput not found");
+    } else {
+        sdlStopTextInput_t stop = (sdlStopTextInput_t) dlsym(handle, "SDL_StopTextInput");
+        if (stop != NULL) stop(window);
+        else LOG_TO_E("<%s> %s", "SDL", "sdlTextInputMainThreadCallback: SDL_StopTextInput not found");
+    }
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_movtery_zalithlauncher_game_sdl_SdlBridge_isSdlRenderActive(__attribute__((unused)) JNIEnv* env, __attribute__((unused)) jclass clazz) {
+    // SDL 渲染路径以首个 SDL 窗口创建为标志；仅手柄子系统初始化 SDL（MC 26.2 挂 Controlify）时无窗口
+    return sSdlPrimaryWindow != NULL ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_movtery_zalithlauncher_game_sdl_SdlBridge_setNativeTextInputActive(__attribute__((unused)) JNIEnv* env, __attribute__((unused)) jclass clazz, jboolean active) {
+    if (sSdlPrimaryWindow == NULL) {
+        LOG_TO_W("<%s> %s", "SDL", "setNativeTextInputActive: no SDL window (SDL render path inactive)");
+        return JNI_FALSE;
+    }
+    void *handle = dlopen("libSDL3.so", RTLD_NOW);
+    if (handle == NULL) {
+        LOG_TO_E("<%s> %s", "SDL", "setNativeTextInputActive: libSDL3.so dlopen failed");
+        return JNI_FALSE;
+    }
+    sdlRunOnMainThread_t runOnMain = (sdlRunOnMainThread_t) dlsym(handle, "SDL_RunOnMainThread");
+    if (runOnMain == NULL) {
+        LOG_TO_E("<%s> %s", "SDL", "setNativeTextInputActive: SDL_RunOnMainThread not found");
+        return JNI_FALSE;
+    }
+    // SDL3 文本输入 API 要求主线程，经 SDL_RunOnMainThread 投递；不等待完成，激活结果由
+    // SDL 回调 showTextInput 异步镜像回 Java 层
+    bool result = runOnMain(sdlTextInputMainThreadCallback, (void *) (intptr_t) (active ? 1 : 0), JNI_FALSE);
+    if (!result) {
+        LOG_TO_E("<%s> %s", "SDL", "setNativeTextInputActive: SDL_RunOnMainThread dispatch failed");
+    }
+    return result ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_movtery_zalithlauncher_game_sdl_SdlBridge_isNativeTextInputActive(__attribute__((unused)) JNIEnv* env, __attribute__((unused)) jclass clazz) {
+    if (sSdlPrimaryWindow == NULL) return JNI_FALSE;
+    void *handle = dlopen("libSDL3.so", RTLD_NOW);
+    if (handle == NULL) {
+        LOG_TO_E("<%s> %s", "SDL", "isNativeTextInputActive: libSDL3.so dlopen failed");
+        return JNI_FALSE;
+    }
+    sdlIsTextInputActive_t isActive = (sdlIsTextInputActive_t) dlsym(handle, "SDL_TextInputActive");
+    if (isActive == NULL) {
+        LOG_TO_E("<%s> %s", "SDL", "isNativeTextInputActive: SDL_TextInputActive not found");
+        return JNI_FALSE;
+    }
+    // 仅读取激活标志，无需像 setNativeTextInputActive 那样经 SDL_RunOnMainThread 投递
+    return isActive(sSdlPrimaryWindow) ? JNI_TRUE : JNI_FALSE;
 }
 
 jboolean critical_send_char(jchar codepoint) {

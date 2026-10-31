@@ -4,6 +4,7 @@ import androidx.collection.ArrayMap
 import com.movtery.zalithlauncher.InfoDistributor
 import com.movtery.zalithlauncher.feature.accounts.AccountUtils
 import com.movtery.zalithlauncher.feature.customprofilepath.ProfilePathHome
+import com.movtery.zalithlauncher.feature.unpack.Lwjgl341Component
 import com.movtery.zalithlauncher.feature.customprofilepath.ProfilePathHome.Companion.getLibrariesHome
 import com.movtery.zalithlauncher.feature.version.Version
 import com.movtery.zalithlauncher.utils.ZHTools
@@ -33,7 +34,8 @@ class LaunchArgs(
         argsList.addAll(getJavaArgs())
         argsList.addAll(getMinecraftJVMArgs())
         argsList.add("-cp")
-        argsList.add("${Tools.getLWJGL3ClassPath()}:$launchClassPath")
+        val useLwjgl341 = Tools.detectLwjglVersion(versionInfo) >= Lwjgl341Component.MIN_VERSION
+        argsList.add("${Tools.getLWJGL3ClassPath(useLwjgl341)}:$launchClassPath")
 
         if (runtime.javaVersion > 8) {
             argsList.add("--add-exports")

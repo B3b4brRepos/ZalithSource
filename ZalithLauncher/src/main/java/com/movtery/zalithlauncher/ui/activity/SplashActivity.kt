@@ -14,6 +14,7 @@ import com.movtery.zalithlauncher.databinding.ActivitySplashBinding
 import com.movtery.zalithlauncher.feature.unpack.Components
 import com.movtery.zalithlauncher.feature.unpack.Jre
 import com.movtery.zalithlauncher.feature.unpack.UnpackComponentsTask
+import com.movtery.zalithlauncher.feature.unpack.UnpackLwjgl341Task
 import com.movtery.zalithlauncher.feature.unpack.UnpackJreTask
 import com.movtery.zalithlauncher.feature.unpack.UnpackSingleFilesTask
 import com.movtery.zalithlauncher.task.Task
@@ -107,6 +108,11 @@ class SplashActivity : BaseActivity() {
                         unpackComponentsTask
                     )
                 )
+            }
+        }
+        UnpackLwjgl341Task(this).let { task ->
+            if (!task.isCheckFailed()) {
+                items.add(InstallableItem("LWJGL 3.4.1", getString(R.string.splash_screen_lwjgl), task))
             }
         }
         Jre.entries.forEach {
